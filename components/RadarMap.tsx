@@ -42,27 +42,45 @@ const RadarMap: React.FC<Props> = ({ location, radarMetadata }) => {
     }
   }, []);
 
+  // Neteja totes les capes quan canvia el metadata
   useEffect(() => {
     if (!radarMetadata || !mapRef.current) return;
-    
-    // Netejar capes velles
     Object.values(layersRef.current).forEach(layer => mapRef.current?.removeLayer(layer));
     layersRef.current = {};
-    
-    // Carregar tots els frames (passat + futur)
-    radarMetadata.frames.forEach((frame, idx) => {
-      const url = getRadarTileUrl(radarMetadata.host, frame.path);
-      const layer = L.tileLayer(url, { opacity: 0, zIndex: 200 + idx });
-      if (mapRef.current) {
-        layer.addTo(mapRef.current);
-        layersRef.current[idx] = layer;
-      }
-    });
-    
-    // Només reiniciem si és la primera vegada que carreguem dades
     if (!isLoaded) setProgress(0);
     setIsLoaded(true);
-  }, [radarMetadata, isLoaded]);
+  }, [radarMetadata]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Càrrega lazy: només manté les capes del frame actual i el següent
+  useEffect(() => {
+    if (!radarMetadata || !mapRef.current || !isLoaded) return;
+    const framesCount = radarMetadata.frames.length;
+    const currentIdx = Math.floor(progress) % framesCount;
+    const nextIdx = (currentIdx + 1) % framesCount;
+    const needed = new Set([currentIdx, nextIdx]);
+
+    // Eliminar capes que ja no cal
+    (Object.entries(layersRef.current) as [string, L.TileLayer][]).forEach(([idxStr, layer]) => {
+      const idx = parseInt(idxStr);
+      if (!needed.has(idx)) {
+        mapRef.current?.removeLayer(layer);
+        delete layersRef.current[idx];
+      }
+    });
+
+    // Afegir les capes que falten
+    needed.forEach(idx => {
+      if (!layersRef.current[idx]) {
+        const frame = radarMetadata.frames[idx];
+        const url = getRadarTileUrl(radarMetadata.host, frame.path);
+        const layer = L.tileLayer(url, { opacity: 0, zIndex: 200 + idx });
+        if (mapRef.current) {
+          layer.addTo(mapRef.current);
+          layersRef.current[idx] = layer;
+        }
+      }
+    });
+  }, [Math.floor(progress), radarMetadata, isLoaded]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Gestió de l'opacitat per fer transicions suaus entre frames
   useEffect(() => {

@@ -26,10 +26,11 @@ export const getTileCoords = (lat: number, lng: number, zoom: number) => {
 
 /**
  * Retorna la URL per a les teules del radar.
+ * Nota: frame.path ja inclou el prefix /v2/radar/... (p.ex. "/v2/radar/1772997600")
  * Utilitzem l'esquema de colors 1 (vibrant) i suavitzat 1 per a transicions millors.
  */
 export const getRadarTileUrl = (host: string, path: string): string => {
-  return `${host}/v2/radar/${path}/256/{z}/{x}/{y}/1/1_1.png`;
+  return `${host}${path}/256/{z}/{x}/{y}/1/1_1.png`;
 };
 
 /**
@@ -46,7 +47,12 @@ const getColorIntensity = (r: number, g: number, b: number, a: number): Intensit
   return 'cap';
 };
 
+const pixelCache = new Map<string, IntensityLevel>();
+
 export const analyzePixelAtPoint = async (url: string, lat: number, lng: number, zoom: number): Promise<IntensityLevel> => {
+  const cacheKey = `${url}|${lat}|${lng}|${zoom}`;
+  if (pixelCache.has(cacheKey)) return pixelCache.get(cacheKey)!;
+
   return new Promise((resolve) => {
     const img = new Image();
     img.crossOrigin = "anonymous";
@@ -68,11 +74,16 @@ export const analyzePixelAtPoint = async (url: string, lat: number, lng: number,
 
       try {
         const pixel = ctx.getImageData(pixelX, pixelY, 1, 1).data;
-        resolve(getColorIntensity(pixel[0], pixel[1], pixel[2], pixel[3]));
+        const result = getColorIntensity(pixel[0], pixel[1], pixel[2], pixel[3]);
+        pixelCache.set(cacheKey, result);
+        resolve(result);
       } catch (e) {
         resolve('cap');
       }
     };
-    img.onerror = () => resolve('cap');
+    img.onerror = () => {
+      pixelCache.set(cacheKey, 'cap');
+      resolve('cap');
+    };
   });
 };
